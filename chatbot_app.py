@@ -1,33 +1,57 @@
 import streamlit as st
+import pickle
+import numpy as np
 
-# Title
-st.title("🤖EV AI Chatbot")
+# Load ML model
+with open("model.pkl", "rb") as f:
+    model = pickle.load(f)
+
+st.title("⚡ EV Range Prediction Chatbot")
+st.write("Hello! I'm your EV Assistant. Ask me anything about EVs or give EV specs to predict range.")
 
 # Chat history
-if "messages" not in st.session_state:
-    st.session_state["messages"] = []
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
-def chatbot_response(user_input):
-    return f"You said: {user_input} — (Bot response will come here later)"
+# --- Chatbot Logic ---
+def generate_bot_reply(message):
+    msg = message.lower()
 
-# Display chat history
-for msg in st.session_state["messages"]:
-    with st.chat_message(msg["role"]):
-        st.write(msg["content"])
+    # Greetings
+    if "hello" in msg or "hi" in msg:
+        return "Hello! I'm your EV assistant. You can ask me anything about Electric Vehicles or ask me to predict driving range."
 
-# Input box
-user_input = st.chat_input("Type your message...")
+    # Asking about EV range prediction
+    if "predict" in msg or "range" in msg:
+        return "Sure! Please enter: battery capacity (kWh), torque (Nm), and efficiency (Wh/km)."
 
-if user_input:
-    # Display user's message
-    st.session_state["messages"].append({"role": "user", "content": user_input})
+    # If user gives numbers
+    words = msg.split()
+    numbers = [float(w) for w in words if w.replace('.', '', 1).isdigit()]
 
-    # Get bot reply
-    bot_reply = chatbot_response(user_input)
+    if len(numbers) == 3:
+        battery, torque, efficiency = numbers
+        user_input = np.array([[battery, torque, efficiency]])
+        prediction = model.predict(user_input)[0]
+        return f"🚗 Estimated Range: **{prediction:.2f} km**"
 
-    # Save bot message
-    st.session_state["messages"].append({"role": "assistant", "content": bot_reply})
+    # Default response
+    return "I can help you with EV info or range prediction. Try saying: 'Predict range for 80 300 150'."
 
-    # Display bot message instantly
-    with st.chat_message("assistant"):
-        st.write(bot_reply)
+# --- Chat Interface ---
+user_message = st.text_input("You:", "")
+
+if st.button("Send"):
+    if user_message.strip() != "":
+        bot_response = generate_bot_reply(user_message)
+
+        # Save to chat history
+        st.session_state.chat_history.append(("You", user_message))
+        st.session_state.chat_history.append(("Bot", bot_response))
+
+# Display chat
+for sender, msg in st.session_state.chat_history:
+    if sender == "You":
+        st.write(f"**You:** {msg}")
+    else:
+        st.success(f"**Bot:** {msg}")
