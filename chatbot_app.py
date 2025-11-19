@@ -1,57 +1,85 @@
 import streamlit as st
 import pickle
 import numpy as np
+import re
 
 # Load ML model
 with open("model.pkl", "rb") as f:
     model = pickle.load(f)
 
-st.title("⚡ EV Range Prediction Chatbot")
-st.write("Hello! I'm your EV Assistant. Ask me anything about EVs or give EV specs to predict range.")
+# ---- PAGE SETUP ----
+st.set_page_config(page_title="EV Chatbot", page_icon="⚡")
+
+st.markdown("""
+    <style>
+        .user-msg {background-color: #DCF8C6; padding: 10px; border-radius: 10px; margin: 5px;}
+        .bot-msg {background-color: #E8EAF6; padding: 10px; border-radius: 10px; margin: 5px;}
+    </style>
+""", unsafe_allow_html=True)
+
+st.title("⚡ EV Smart Chatbot")
+st.write("Ask me anything about Electric Vehicles or give specs to predict range.")
 
 # Chat history
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# --- Chatbot Logic ---
+# ---- BOT LOGIC ----
+def predict_range_from_text(text):
+
+    # Extract numbers from the user sentence
+    numbers = re.findall(r"\d+\.?\d*", text)
+    numbers = [float(n) for n in numbers]
+
+    # If exactly 3 numbers → predict
+    if len(numbers) == 3:
+        battery, torque, efficiency = numbers
+        arr = np.array([[battery, torque, efficiency]])
+        result = model.predict(arr)[0]
+        return f"🚗 Estimated Range: **{result:.2f} km**"
+
+    # User asked prediction but didn’t give enough numbers
+    if "predict" in text.lower() or "range" in text.lower():
+        return ("To predict, please provide 3 values:\n"
+                "🔋 Battery (kWh)\n⚙️ Torque (Nm)\n⚡ Efficiency (Wh/km)\n"
+                "Example: `Predict range for 80 300 150`")
+
+    return None  # No prediction intent detected
+
+
 def generate_bot_reply(message):
     msg = message.lower()
 
-    # Greetings
-    if "hello" in msg or "hi" in msg:
-        return "Hello! I'm your EV assistant. You can ask me anything about Electric Vehicles or ask me to predict driving range."
+    # Greeting
+    if any(word in msg for word in ["hello", "hi", "hey"]):
+        return "Hello! I'm your EV assistant. Ask me anything or give specs to predict driving range."
 
-    # Asking about EV range prediction
-    if "predict" in msg or "range" in msg:
-        return "Sure! Please enter: battery capacity (kWh), torque (Nm), and efficiency (Wh/km)."
+    # Try prediction
+    prediction = predict_range_from_text(message)
+    if prediction:
+        return prediction
 
-    # If user gives numbers
-    words = msg.split()
-    numbers = [float(w) for w in words if w.replace('.', '', 1).isdigit()]
+    # General EV questions
+    if "ev" in msg or "electric" in msg:
+        return ("An EV (Electric Vehicle) runs on battery instead of fuel. "
+                "It uses an electric motor and is more efficient & eco-friendly!")
 
-    if len(numbers) == 3:
-        battery, torque, efficiency = numbers
-        user_input = np.array([[battery, torque, efficiency]])
-        prediction = model.predict(user_input)[0]
-        return f"🚗 Estimated Range: **{prediction:.2f} km**"
+    return ("I can help with EV facts or range prediction.\n"
+            "Try: `Predict range for 75 250 160`")
 
-    # Default response
-    return "I can help you with EV info or range prediction. Try saying: 'Predict range for 80 300 150'."
-
-# --- Chat Interface ---
-user_message = st.text_input("You:", "")
+# ---- CHAT UI ----
+user_msg = st.text_input("You:")
 
 if st.button("Send"):
-    if user_message.strip() != "":
-        bot_response = generate_bot_reply(user_message)
+    if user_msg:
+        bot_reply = generate_bot_reply(user_msg)
+        st.session_state.chat_history.append(("You", user_msg))
+        st.session_state.chat_history.append(("Bot", bot_reply))
 
-        # Save to chat history
-        st.session_state.chat_history.append(("You", user_message))
-        st.session_state.chat_history.append(("Bot", bot_response))
-
-# Display chat
-for sender, msg in st.session_state.chat_history:
+# Display chat bubbles
+for sender, text in st.session_state.chat_history:
     if sender == "You":
-        st.write(f"**You:** {msg}")
+        st.markdown(f"<div class='user-msg'><b>You:</b> {text}</div>", unsafe_allow_html=True)
     else:
-        st.success(f"**Bot:** {msg}")
+        st.markdown(f"<div class='bot-msg'><b>Bot:</b> {text}</div>", unsafe_allow_html=True)
+
