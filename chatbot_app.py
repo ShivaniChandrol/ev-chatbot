@@ -1,119 +1,109 @@
 import streamlit as st
-import re
+import pickle
+import numpy as np
 
-# -----------------------------
-# PAGE CONFIG
-# -----------------------------
-st.set_page_config(page_title="EV Smart Assistant", page_icon="⚡", layout="wide")
-
-# -----------------------------
-# CUSTOM CSS FOR CHAT UI
-# -----------------------------
-st.markdown("""
-    <style>
-        .user-msg {
-            background-color: #1e1e1e;
-            padding: 10px 15px;
-            border-radius: 15px;
-            color: white;
-            width: fit-content;
-            margin-bottom: 10px;
-        }
-        .bot-msg {
-            background-color: #2f4f4f;
-            padding: 10px 15px;
-            border-radius: 15px;
-            color: white;
-            width: fit-content;
-            margin-bottom: 10px;
-        }
-        .main-container {
-            background-color: #111;
-        }
-    </style>
-""", unsafe_allow_html=True)
-
-# -----------------------------
-# CHAT MEMORY
-# -----------------------------
+# -------------- SAFE SESSION STATE --------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-if "awaiting_range_inputs" not in st.session_state:
-    st.session_state.awaiting_range_inputs = False
+# -------------- LOAD MODEL SAFELY --------------
+@st.cache_resource
+def load_model():
+    with open("model.pkl", "rb") as f:
+        return pickle.load(f)
 
-# -----------------------------
-# RANGE PREDICTION FUNCTION
-# -----------------------------
-def predict_ev_range(battery_kwh, torque_nm, efficiency_wh_km):
-    # Simple model formula (example)
-    usable_energy = battery_kwh * 0.9       # 90% usable battery
-    base_range = (usable_energy * 1000) / efficiency_wh_km
-    torque_factor = 1 - (torque_nm / 2000)  # high torque slightly reduces range
-    final_range = base_range * torque_factor
-    return max(int(final_range), 1)
+model = load_model()
 
-# -----------------------------
-# MESSAGE DISPLAY FUNCTION
-# -----------------------------
+# -------------- UI DESIGN --------------
+st.set_page_config(page_title="EV Range Chatbot", layout="wide")
+
+st.markdown("""
+<style>
+.user-bubble {
+    background-color: #1e3a8a;
+    color: white;
+    padding: 12px;
+    border-radius: 12px;
+    margin: 8px 0px;
+    width: fit-content;
+    max-width: 70%;
+}
+
+.bot-bubble {
+    background-color: #e5e7eb;
+    color: #111827;
+    padding: 12px;
+    border-radius: 12px;
+    margin: 8px 0px;
+    width: fit-content;
+    max-width: 70%;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+st.title("⚡ EV Range Prediction Chatbot")
+st.write("Ask me anything about Electric Vehicles or request a range prediction!")
+
+# -------------- DISPLAY CHAT --------------
 def display_message(role, text):
     if role == "user":
-        st.markdown(f"<div class='user-msg'>You: {text}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='user-bubble'>You: {text}</div>", unsafe_allow_html=True)
     else:
-        st.markdown(f"<div class='bot-msg'>Bot: {text}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='bot-bubble'>Bot: {text}</div>", unsafe_allow_html=True)
 
-# -----------------------------
-# MAIN CHATBOT LOGIC
-# -----------------------------
-def get_bot_reply(user_input):
-
-    # Greeting intent
-    if user_input.lower() in ["hi", "hello", "hey"]:
-        return "Hello Shivani! 👋 I'm your EV smart assistant. Ask me anything about electric vehicles or say **predict range** to estimate EV driving range."
-
-    # If bot previously asked for numbers → expect prediction input now
-    if st.session_state.awaiting_range_inputs:
-        numbers = re.findall(r"\d+", user_input)
-        if len(numbers) == 3:
-            battery, torque, efficiency = map(int, numbers)
-            st.session_state.awaiting_range_inputs = False
-            predicted = predict_ev_range(battery, torque, efficiency)
-            return f"🔋 **Predicted Range:** approximately **{predicted} km** under normal driving conditions."
-        else:
-            return "Please enter values in this format: `battery_kWh torque_Nm efficiency_WhPerKm`"
-
-    # When user wants range prediction
-    if "predict" in user_input.lower() and "range" in user_input.lower():
-        st.session_state.awaiting_range_inputs = True
-        return "Sure! 😊 Please enter: `battery_kWh torque_Nm efficiency_WhPerKm`\n\nExample: `80 300 150`"
-
-    # EV general knowledge
-    if "what is ev range" in user_input.lower():
-        return "EV range means how far an electric vehicle can travel on a single full charge. It depends on battery capacity, efficiency, driving style & road conditions."
-
-    return "I'm not sure I understood that 🤔. You can ask me EV questions or say **predict range** to calculate EV driving distance."
-
-# -----------------------------
-# UI LAYOUT
-# -----------------------------
-st.title("⚡ EV Smart Assistant (Advanced Edition)")
-st.write("Your personal electric vehicle expert — smarter, cleaner UI, more powerful responses.")
-
-# Chat History Display
 for msg in st.session_state.messages:
-    display_message(msg["role"], msg["text"])
+    if isinstance(msg, dict) and "role" in msg and "text" in msg:
+        display_message(msg["role"], msg["text"])
 
-# -----------------------------
-# USER INPUT
-# -----------------------------
-user_input = st.chat_input("Type your message...")
+# -------------- BOT INTELLIGENCE --------------
+def bot_reply(user_text):
+    user_text_lower = user_text.lower()
+
+    # Predict command
+    if any(word in user_text_lower for word in ["predict", "range"]):
+        return "Sure! Please enter values in the box below:\nBattery, Torque, Efficiency"
+
+    # Basic EV questions
+    if "ev" in user_text_lower and "what" in user_text_lower:
+        return "An EV (Electric Vehicle) uses electricity stored in batteries instead of fuel."
+
+    if "battery" in user_text_lower:
+        return "Battery capacity (kWh) tells how much energy the EV can store."
+
+    if "torque" in user_text_lower:
+        return "Torque (Nm) represents how powerful the EV motor is."
+
+    if "efficiency" in user_text_lower:
+        return "Efficiency (Wh/km) tells how many watt-hours are consumed per km."
+
+    # Default
+    return "I'm here to help! Ask me about EVs or say **predict range for battery torque efficiency**."
+
+# -------------- USER INPUT FIELD --------------
+user_input = st.chat_input("Type your message here...")
 
 if user_input:
-    # Show user message
     st.session_state.messages.append({"role": "user", "text": user_input})
-    display_message("user", user_input)
+    bot_response = bot_reply(user_input)
+    st.session_state.messages.append({"role": "bot", "text": bot_response})
+    st.rerun()
 
-    # Generate bot reply
-    bot_reply = get_bot_reply(user_input)
-    st.session_state.messages.append({"role": "bot", "text": bot_reply})
-    display_message("bot", bot_reply)
+# -------------- RANGE PREDICTION BOX --------------
+st.subheader("🔋 Enter Values for Range Prediction")
+
+battery = st.number_input("Battery Capacity (kWh):", min_value=10.0, max_value=200.0, step=1.0)
+torque = st.number_input("Torque (Nm):", min_value=50.0, max_value=2000.0, step=10.0)
+efficiency = st.number_input("Efficiency (Wh/km):", min_value=50.0, max_value=300.0, step=1.0)
+
+if st.button("Predict Range"):
+    user_data = np.array([[battery, torque, efficiency]])
+    prediction = model.predict(user_data)[0]
+    st.success(f"🚗 Estimated Driving Range: **{prediction:.2f} km**")
+
+    # Save in chat
+    st.session_state.messages.append(
+        {"role": "bot", "text": f"Your predicted EV range is **{prediction:.2f} km**"}
+    )
+    st.rerun()
+
